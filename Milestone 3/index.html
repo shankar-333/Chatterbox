@@ -77,8 +77,7 @@
             document.getElementById('room-tag').innerText = `Room: ${selectedRoom}`;
             document.getElementById('join-screen').style.display = 'none';
             document.getElementById('chat-container').style.display = 'flex';
-            
-            // Connect to server [cite: 487]
+
             socket = new WebSocket("ws://localhost:8000/ws");
 
             socket.onopen = () => {
@@ -111,7 +110,7 @@
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(() => {
                 socket.send(JSON.stringify({ type: "stop_typing" }));
-            }, 2000); // Hide indicator after 2 seconds of no typing
+            }, 2000);
         }
 
         function renderMessage(name, text, type) {
@@ -142,4 +141,5 @@
         }
     </script>
 </body>
+
 </html>
