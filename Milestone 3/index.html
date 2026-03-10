@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ChatterBox</title>
+    <style>
+        :root {
+            --bg-dark: #121212;
+            --surface: #1e1e1e;
+            --messenger-blue: linear-gradient(135deg, #0084ff, #00c6ff);
+            --text-main: #ffffff;
+            --server-bubble: #2b2b2b;
+            --accent: #5b5fc7;
+        }
+
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-dark); color: var(--text-main); margin: 0; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        
+        #join-screen { background: var(--surface); padding: 40px; border-radius: 12px; text-align: center; width: 350px; border: 1px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input, select { background: #000; border: 1px solid #444; color: white; padding: 14px; border-radius: 8px; width: 100%; box-sizing: border-box; margin-bottom: 20px; outline: none; }
+        .btn { background: var(--accent); color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 600; }
+
+        #chat-container { display: none; width: 100%; height: 100%; flex-direction: column; }
+        #header { padding: 15px 25px; background: var(--surface); border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        #room-tag { font-size: 12px; color: #888; background: #333; padding: 4px 10px; border-radius: 20px; }
+        
+        #chat-box { flex: 1; overflow-y: auto; padding: 25px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
+        #typing-indicator { padding: 0 25px 10px; font-size: 13px; color: #00ff88; height: 20px; font-style: italic; }
+
+        .bubble { max-width: 70%; padding: 12px 18px; border-radius: 18px; font-size: 14.5px; position: relative; line-height: 1.4; }
+        .user-msg { align-self: flex-end; background: var(--messenger-blue); border-bottom-right-radius: 4px; }
+        .server-msg { align-self: flex-start; background-color: var(--server-bubble); border-bottom-left-radius: 4px; border: 1px solid #444; }
+        .system-msg { align-self: center; background: transparent; color: #888; font-style: italic; font-size: 13px; text-align: center; margin: 8px 0; }
+
+        .meta { font-size: 11px; font-weight: bold; margin-bottom: 4px; opacity: 0.8; }
+        #input-area { padding: 20px; background: var(--surface); display: flex; gap: 12px; border-top: 1px solid #333; }
+    </style>
+</head>
+<body>
+
+    <div id="join-screen">
+        <h2 style="color: var(--accent); margin-top: 0;">ChatterBox</h2>
+        <input type="text" id="usernameInput" placeholder="Enter your name...">
+        <select id="roomInput">
+            <option value="General">General</option>
+            <option value="Tech">Tech</option>
+            <option value="Fun">Fun</option>
+        </select>
+        <button class="btn" onclick="joinChat()">Join Room</button>
+    </div>
+
+    <div id="chat-container">
+        <div id="header">
+            <strong>ChatterBox</strong>
+            <span id="room-tag">Room: General</span>
+        </div>
+        <div id="chat-box"></div>
+        <div id="typing-indicator"></div>
+        <div id="input-area">
+            <input type="text" id="msgInput" placeholder="Type a message..." oninput="handleTyping()" onkeypress="if(event.key==='Enter') send()">
+            <button class="btn" style="width: 80px;" onclick="send()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let username = "";
+        let selectedRoom = "";
+        let socket;
+        let typingTimeout;
+
+        function joinChat() {
+            const nameInput = document.getElementById('usernameInput');
+            const roomInput = document.getElementById('roomInput');
+            if (nameInput.value.trim() === "") return;
+
+            username = nameInput.value;
+            selectedRoom = roomInput.value;
+            
+            document.getElementById('room-tag').innerText = `Room: ${selectedRoom}`;
+            document.getElementById('join-screen').style.display = 'none';
+            document.getElementById('chat-container').style.display = 'flex';
+            
+            // Connect to server [cite: 487]
+            socket = new WebSocket("ws://localhost:8000/ws");
+
+            socket.onopen = () => {
+                socket.send(JSON.stringify({
+                    type: "join",
+                    username: username,
+                    room: selectedRoom
+                }));
+            };
+
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === "typing") {
+                    document.getElementById('typing-indicator').innerText = `${data.user} is typing...`;
+                } else if (data.type === "stop_typing") {
+                    document.getElementById('typing-indicator').innerText = "";
+                } else if (data.type === "system") {
+                    renderMessage("System", data.message, 'system-msg');
+                } else if (data.type === "chat") {
+                    const bubbleType = (data.user === username) ? 'user-msg' : 'server-msg';
+                    renderMessage(data.user, data.message, bubbleType);
+                }
+            };
+        }
+
+        function handleTyping() {
+            socket.send(JSON.stringify({ type: "typing" }));
+            
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                socket.send(JSON.stringify({ type: "stop_typing" }));
+            }, 2000); // Hide indicator after 2 seconds of no typing
+        }
+
+        function renderMessage(name, text, type) {
+            const chatBox = document.getElementById('chat-box');
+            const div = document.createElement('div');
+            div.className = `bubble ${type}`;
+            
+            if (type === "system-msg") {
+                div.innerHTML = `<div>${text}</div>`;
+            } else {
+                div.innerHTML = `<div class="meta">${name}</div><div>${text}</div>`;
+            }
+            
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function send() {
+            const input = document.getElementById('msgInput');
+            if (input.value.trim() !== "" && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: "chat",
+                    message: input.value
+                }));
+                input.value = "";
+                socket.send(JSON.stringify({ type: "stop_typing" }));
+            }
+        }
+    </script>
+</body>
+</html>
